@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle Financeiro Pessoal</title>
+  <meta name="description" content="Painel de controle financeiro pessoal moderno, intuitivo e completo com salvamento automático.">
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Header principal -->
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="brand-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="brand-title">Gestão Financeira</h1>
+        <p class="brand-subtitle">Planejamento & Controle Pessoal</p>
+      </div>
+    </div>
+
+    <!-- Indicador de Salvamento Automático e Ações Rápidas -->
+    <div class="header-actions">
+      <div id="saveIndicator" class="save-badge">
+        <span class="status-dot"></span>
+        <span class="save-text">Salvo automaticamente</span>
+      </div>
+
+      <div class="backup-actions">
+        <button id="btnExport" class="btn-secondary" title="Exportar backup dos dados em JSON">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          Exportar
+        </button>
+        <label for="importFile" class="btn-secondary btn-file-label" title="Restaurar backup">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+          </svg>
+          Importar
+        </label>
+        <input type="file" id="importFile" accept=".json" style="display: none;">
+      </div>
+    </div>
+  </header>
+
+  <!-- Navegação Principal por Abas -->
+  <nav class="main-tabs-nav" aria-label="Abas do painel">
+    <button class="tab-btn active" data-tab="gastos-mensais" id="tabGastosMensais">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/>
+        <line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      Gastos Mensais
+    </button>
+    <button class="tab-btn" data-tab="dividas" id="tabDividas">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="12"/>
+        <line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      Dívidas
+    </button>
+    <button class="tab-btn" data-tab="investimentos" id="tabInvestimentos">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+        <polyline points="17 6 23 6 23 12"/>
+      </svg>
+      Investimentos
+    </button>
+    <button class="tab-btn" data-tab="assinaturas" id="tabAssinaturas">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+      </svg>
+      Assinaturas
+    </button>
+  </nav>
+
+  <!-- Conteúdo Principal -->
+  <main class="content-container">
+
+    <!-- ==================== ABA 1: GASTOS MENSAIS ==================== -->
+    <section id="section-gastos-mensais" class="tab-content active">
+      <!-- Barra de Controle do Ano e Resumo Financeiro -->
+      <div class="top-controls-bar">
+        <div class="year-selector-wrap">
+          <label for="selectYear" class="control-label">Ano de Referência:</label>
+          <div class="select-with-btn">
+            <select id="selectYear" class="styled-select"></select>
+            <button id="btnAddYear" class="btn-primary" title="Adicionar novo ano">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Novo Ano
+            </button>
+          </div>
+        </div>
+
+        <!-- Cards com KPIs Rápidos do Mês Atual -->
+        <div class="kpi-group">
+          <div class="kpi-card">
+            <span class="kpi-label">Total do Mês</span>
+            <span class="kpi-value highlight" id="kpiTotalMes">R$ 0,00</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Total Quitado</span>
+            <span class="kpi-value text-success" id="kpiQuitadoMes">R$ 0,00</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Pendente / Atrasado</span>
+            <span class="kpi-value text-warning" id="kpiPendenteMes">R$ 0,00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navegador de Meses em Carrossel/Abas -->
+      <div class="month-selector-nav" id="monthNav">
+        <!-- Renderizado dinamicamente via JS: Jan a Dez -->
+      </div>
+
+      <!-- Tabela de Lançamentos Mensais -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <div class="table-title-wrap">
+            <h2 id="currentMonthYearTitle" class="section-heading">Lançamentos de Janeiro / 2026</h2>
+            <span id="rowCountBadge" class="count-badge">0 itens</span>
+          </div>
+          <div class="table-actions">
+            <button id="btnAddGastoRow" class="btn-primary">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Adicionar Lançamento
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="finance-table" id="tableGastos">
+            <thead>
+              <tr>
+                <th style="width: 24%;">Descrição</th>
+                <th style="width: 12%;">Tipo de Compra</th>
+                <th style="width: 12%;">Forma de Pagto</th>
+                <th style="width: 10%;">Vencimento</th>
+                <th style="width: 12%;">Cartão</th>
+                <th style="width: 12%; text-align: right;">Valor (R$)</th>
+                <th style="width: 10%;">Situação</th>
+                <th style="width: 14%;">Observações</th>
+                <th style="width: 4%; text-align: center;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyGastos">
+              <!-- Linhas geradas dinamicamente -->
+            </tbody>
+            <tfoot>
+              <tr class="table-footer-row">
+                <td colspan="5" style="text-align: right; font-weight: 700;">TOTAL DO MÊS:</td>
+                <td style="text-align: right; font-weight: 800; font-size: 1.05rem;" id="tableFooterTotal">R$ 0,00</td>
+                <td colspan="3"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ABA 2: DÍVIDAS ==================== -->
+    <section id="section-dividas" class="tab-content">
+      <div class="section-intro">
+        <div>
+          <h2 class="section-heading">Controle de Dívidas e Financiamentos</h2>
+          <p class="section-desc">Monitore credores, saldo devedor, parcelas restantes e quite seus compromissos.</p>
+        </div>
+        <div class="kpi-group">
+          <div class="kpi-card">
+            <span class="kpi-label">Saldo Devedor Total</span>
+            <span class="kpi-value text-danger" id="kpiTotalDividas">R$ 0,00</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Compromisso Mensal</span>
+            <span class="kpi-value text-warning" id="kpiMensalDividas">R$ 0,00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-card-header">
+          <span class="count-badge" id="dividasCountBadge">0 dívidas cadastradas</span>
+          <button id="btnAddDivida" class="btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Nova Dívida
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>Credor / Descrição</th>
+                <th>Cartão</th>
+                <th>Valor Total (R$)</th>
+                <th>Parcelas Totais</th>
+                <th>Parcelas Pagas</th>
+                <th>Valor da Parcela (R$)</th>
+                <th>Saldo Devedor (R$)</th>
+                <th>Vencimento Todo Dia</th>
+                <th>Situação</th>
+                <th>Observações</th>
+                <th style="text-align: center;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyDividas"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ABA 3: INVESTIMENTOS ==================== -->
+    <section id="section-investimentos" class="tab-content">
+      <div class="section-intro">
+        <div>
+          <h2 class="section-heading">Carteira de Investimentos</h2>
+          <p class="section-desc">Acompanhe aportes, rentabilidade estimada e patrimônio acumulado.</p>
+        </div>
+        <div class="kpi-group">
+          <div class="kpi-card">
+            <span class="kpi-label">Total Aportado</span>
+            <span class="kpi-value highlight" id="kpiAportadoTotal">R$ 0,00</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Valor Atual Estimado</span>
+            <span class="kpi-value text-success" id="kpiAtualTotal">R$ 0,00</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Rendimento Estimado</span>
+            <span class="kpi-value text-success" id="kpiRendimentoTotal">+ R$ 0,00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-card-header">
+          <span class="count-badge" id="investCountBadge">0 ativos</span>
+          <button id="btnAddInvestimento" class="btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Novo Investimento
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>Ativo / Título</th>
+                <th>Categoria</th>
+                <th>Instituição / Corretora</th>
+                <th style="text-align: right;">Total Aportado (R$)</th>
+                <th style="text-align: right;">Saldo Atual (R$)</th>
+                <th style="text-align: right;">Rendimento (R$)</th>
+                <th>Data do Aporte</th>
+                <th>Objetivo / Observações</th>
+                <th style="text-align: center;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyInvestimentos"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ABA 4: ASSINATURAS ==================== -->
+    <section id="section-assinaturas" class="tab-content">
+      <div class="section-intro">
+        <div>
+          <h2 class="section-heading">Assinaturas e Recorrências</h2>
+          <p class="section-desc">Controle seus streamings, softwares, planos e mensalidades fixas.</p>
+        </div>
+        <div class="kpi-group">
+          <div class="kpi-card">
+            <span class="kpi-label">Custo Mensal</span>
+            <span class="kpi-value highlight" id="kpiAssinaturasMensal">R$ 0,00</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Custo Anual Projetado</span>
+            <span class="kpi-value" id="kpiAssinaturasAnual">R$ 0,00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-card-header">
+          <span class="count-badge" id="assinaturasCountBadge">0 serviços ativos</span>
+          <button id="btnAddAssinatura" class="btn-primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Nova Assinatura
+          </button>
+        </div>
+        <div class="table-responsive">
+          <table class="finance-table">
+            <thead>
+              <tr>
+                <th>Serviço / Nome</th>
+                <th>Categoria</th>
+                <th>Ciclo de Cobrança</th>
+                <th style="text-align: right;">Valor (R$)</th>
+                <th>Dia da Cobrança</th>
+                <th>Forma de Pagto / Cartão</th>
+                <th>Status</th>
+                <th>Observações</th>
+                <th style="text-align: center;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyAssinaturas"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal para Adicionar Novo Ano -->
+  <dialog id="modalAddYear" class="styled-modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Adicionar Novo Ano</h3>
+        <button id="btnCloseModalYear" class="btn-close" aria-label="Fechar">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label for="inputNewYear" class="control-label">Digite o ano desejado (ex: 2027):</label>
+        <input type="number" id="inputNewYear" class="styled-input" min="2020" max="2100" placeholder="2027">
+        <p id="modalYearError" class="input-error-msg" style="display: none;"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelModalYear" class="btn-secondary">Cancelar</button>
+        <button id="btnConfirmModalYear" class="btn-primary">Criar Ano</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Firebase SDKs compatíveis -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
