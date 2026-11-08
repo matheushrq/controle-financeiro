@@ -333,6 +333,31 @@ function formatBRL(value) {
   return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+// Converte string de valor monetário (aceitando vírgula ou ponto, ex: "99,79", ",50", "99.79") para número
+function parseCurrencyInput(value) {
+  if (value === undefined || value === null) return 0;
+  if (typeof value === 'number') return isNaN(value) ? 0 : value;
+  let str = String(value).trim();
+  if (str === '') return 0;
+  // Se começar com vírgula ou ponto (ex: ",50" ou ".50"), adiciona 0 na frente
+  if (str.startsWith(',') || str.startsWith('.')) {
+    str = '0' + str;
+  }
+  // Remove pontos de milhar e converte vírgula decimal para ponto
+  // Exemplo: 1.250,50 -> 1250.50
+  str = str.replace(/\./g, '').replace(',', '.');
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
+}
+
+// Formata número com 2 casas decimais no padrão brasileiro (com vírgula) para exibição em inputs
+function formatDecimalDisplay(value) {
+  if (value === undefined || value === null || value === '' || value === 0) return '';
+  const num = parseFloat(value);
+  if (isNaN(num)) return '';
+  return num.toFixed(2).replace('.', ',');
+}
+
 // ================= INITIALIZAÇÃO =================
 document.addEventListener('DOMContentLoaded', () => {
   setupTabs();
@@ -584,19 +609,25 @@ function renderGastosTable() {
       });
       tdCartao.appendChild(selCartao);
 
-      // 6. Valor (campo numérico em reais)
+      // 6. Valor (campo de valor aceitando vírgula ou ponto, ex: 99,79 ou ,50)
       const tdValor = document.createElement('td');
       const inputValor = document.createElement('input');
-      inputValor.type = 'number';
-      inputValor.step = '0.01';
-      inputValor.min = '0';
+      inputValor.type = 'text';
+      inputValor.inputMode = 'decimal';
       inputValor.className = 'table-input table-input-val';
-      inputValor.value = item.valor !== undefined && item.valor !== null ? item.valor : '';
+      inputValor.value = item.valor ? formatDecimalDisplay(item.valor) : '';
       inputValor.placeholder = '0,00';
       inputValor.addEventListener('input', (e) => {
-        item.valor = parseFloat(e.target.value) || 0;
+        item.valor = parseCurrencyInput(e.target.value);
         saveData();
         updateGastosTotals();
+      });
+      inputValor.addEventListener('blur', (e) => {
+        if (item.valor) {
+          e.target.value = formatDecimalDisplay(item.valor);
+        } else if (e.target.value.trim() === '') {
+          e.target.value = '';
+        }
       });
       tdValor.appendChild(inputValor);
 
@@ -810,14 +841,22 @@ function renderDividasTable() {
       // 3. Valor Total
       const tdTotal = document.createElement('td');
       const inTotal = document.createElement('input');
-      inTotal.type = 'number';
-      inTotal.step = '0.01';
+      inTotal.type = 'text';
+      inTotal.inputMode = 'decimal';
       inTotal.className = 'table-input table-input-val';
-      inTotal.value = item.valorTotal || '';
+      inTotal.value = item.valorTotal ? formatDecimalDisplay(item.valorTotal) : '';
+      inTotal.placeholder = '0,00';
       inTotal.addEventListener('input', (e) => {
-        item.valorTotal = parseFloat(e.target.value) || 0;
+        item.valorTotal = parseCurrencyInput(e.target.value);
         saveData();
-        renderDividasTable();
+        updateDividasSummary();
+      });
+      inTotal.addEventListener('blur', (e) => {
+        if (item.valorTotal) {
+          e.target.value = formatDecimalDisplay(item.valorTotal);
+        } else if (e.target.value.trim() === '') {
+          e.target.value = '';
+        }
       });
       tdTotal.appendChild(inTotal);
 
@@ -831,7 +870,7 @@ function renderDividasTable() {
       inParcTot.addEventListener('input', (e) => {
         item.parcelasTotais = parseInt(e.target.value, 10) || 1;
         saveData();
-        renderDividasTable();
+        updateDividaRowCalculations(tr, item);
       });
       tdParcTot.appendChild(inParcTot);
 
@@ -845,20 +884,21 @@ function renderDividasTable() {
       inParcPag.addEventListener('input', (e) => {
         item.parcelasPagas = parseInt(e.target.value, 10) || 0;
         saveData();
-        renderDividasTable();
+        updateDividaRowCalculations(tr, item);
       });
       tdParcPag.appendChild(inParcPag);
 
       // 6. Valor Parcela com sincronização automática para Gastos Mensais
       const tdValParc = document.createElement('td');
       const inValParc = document.createElement('input');
-      inValParc.type = 'number';
-      inValParc.step = '0.01';
+      inValParc.type = 'text';
+      inValParc.inputMode = 'decimal';
       inValParc.className = 'table-input table-input-val';
-      inValParc.value = item.valorParcela || '';
+      inValParc.value = item.valorParcela ? formatDecimalDisplay(item.valorParcela) : '';
+      inValParc.placeholder = '0,00';
       inValParc.addEventListener('input', (e) => {
         const oldVal = parseFloat(item.valorParcela) || 0;
-        const newVal = parseFloat(e.target.value) || 0;
+        const newVal = parseCurrencyInput(e.target.value);
         const diff = newVal - oldVal;
 
         item.valorParcela = newVal;
@@ -867,7 +907,14 @@ function renderDividasTable() {
         }
 
         saveData();
-        renderDividasTable();
+        updateDividaRowCalculations(tr, item);
+      });
+      inValParc.addEventListener('blur', (e) => {
+        if (item.valorParcela) {
+          e.target.value = formatDecimalDisplay(item.valorParcela);
+        } else if (e.target.value.trim() === '') {
+          e.target.value = '';
+        }
       });
       tdValParc.appendChild(inValParc);
 
@@ -875,7 +922,7 @@ function renderDividasTable() {
       const tdSaldo = document.createElement('td');
       tdSaldo.style.textAlign = 'right';
       tdSaldo.style.fontWeight = '700';
-      tdSaldo.className = 'text-danger';
+      tdSaldo.className = 'text-danger td-saldo-devedor';
       tdSaldo.textContent = formatBRL(saldoDevedor);
 
       // 8. Vencimento Dia
@@ -962,6 +1009,42 @@ function renderDividasTable() {
 
   document.getElementById('kpiTotalDividas').textContent = formatBRL(totalDevedor);
   document.getElementById('kpiMensalDividas').textContent = formatBRL(compromissoMensal);
+}
+
+// Atualiza cálculos de saldo devedor da linha e KPIs sem recriar os inputs da tabela de dívidas
+function updateDividaRowCalculations(tr, item) {
+  const parcelasTotais = parseInt(item.parcelasTotais, 10) || 1;
+  const parcelasPagas = parseInt(item.parcelasPagas, 10) || 0;
+  const valorParcela = parseFloat(item.valorParcela) || 0;
+  const parcelasRestantes = Math.max(0, parcelasTotais - parcelasPagas);
+  const saldoDevedor = parcelasRestantes * valorParcela;
+
+  // Atualiza a coluna de Saldo Devedor daquela linha
+  const tdSaldo = tr.querySelector('.td-saldo-devedor');
+  if (tdSaldo) {
+    tdSaldo.textContent = formatBRL(saldoDevedor);
+  }
+
+  updateDividasSummary();
+}
+
+function updateDividasSummary() {
+  let totalDevedor = 0;
+  let compromissoMensal = 0;
+
+  (appData.dividas || []).forEach(item => {
+    const parcelasTotais = parseInt(item.parcelasTotais, 10) || 1;
+    const parcelasPagas = parseInt(item.parcelasPagas, 10) || 0;
+    const valorParcela = parseFloat(item.valorParcela) || 0;
+    const parcelasRestantes = Math.max(0, parcelasTotais - parcelasPagas);
+    totalDevedor += parcelasRestantes * valorParcela;
+    compromissoMensal += valorParcela;
+  });
+
+  const kpiTot = document.getElementById('kpiTotalDividas');
+  const kpiMen = document.getElementById('kpiMensalDividas');
+  if (kpiTot) kpiTot.textContent = formatBRL(totalDevedor);
+  if (kpiMen) kpiMen.textContent = formatBRL(compromissoMensal);
 }
 
 document.getElementById('btnAddDivida').addEventListener('click', () => {
@@ -1052,28 +1135,44 @@ function renderInvestimentosTable() {
       // 4. Aportado
       const tdAport = document.createElement('td');
       const inAport = document.createElement('input');
-      inAport.type = 'number';
-      inAport.step = '0.01';
+      inAport.type = 'text';
+      inAport.inputMode = 'decimal';
       inAport.className = 'table-input table-input-val';
-      inAport.value = item.totalAportado || '';
+      inAport.value = item.totalAportado ? formatDecimalDisplay(item.totalAportado) : '';
+      inAport.placeholder = '0,00';
       inAport.addEventListener('input', (e) => {
-        item.totalAportado = parseFloat(e.target.value) || 0;
+        item.totalAportado = parseCurrencyInput(e.target.value);
         saveData();
-        renderInvestimentosTable();
+        updateInvestimentoRowCalculations(tr, item);
+      });
+      inAport.addEventListener('blur', (e) => {
+        if (item.totalAportado) {
+          e.target.value = formatDecimalDisplay(item.totalAportado);
+        } else if (e.target.value.trim() === '') {
+          e.target.value = '';
+        }
       });
       tdAport.appendChild(inAport);
 
       // 5. Saldo Atual
       const tdAtu = document.createElement('td');
       const inAtu = document.createElement('input');
-      inAtu.type = 'number';
-      inAtu.step = '0.01';
+      inAtu.type = 'text';
+      inAtu.inputMode = 'decimal';
       inAtu.className = 'table-input table-input-val';
-      inAtu.value = item.saldoAtual || '';
+      inAtu.value = item.saldoAtual ? formatDecimalDisplay(item.saldoAtual) : '';
+      inAtu.placeholder = '0,00';
       inAtu.addEventListener('input', (e) => {
-        item.saldoAtual = parseFloat(e.target.value) || 0;
+        item.saldoAtual = parseCurrencyInput(e.target.value);
         saveData();
-        renderInvestimentosTable();
+        updateInvestimentoRowCalculations(tr, item);
+      });
+      inAtu.addEventListener('blur', (e) => {
+        if (item.saldoAtual) {
+          e.target.value = formatDecimalDisplay(item.saldoAtual);
+        } else if (e.target.value.trim() === '') {
+          e.target.value = '';
+        }
       });
       tdAtu.appendChild(inAtu);
 
@@ -1081,7 +1180,7 @@ function renderInvestimentosTable() {
       const tdRend = document.createElement('td');
       tdRend.style.textAlign = 'right';
       tdRend.style.fontWeight = '700';
-      tdRend.className = rendimento >= 0 ? 'text-success' : 'text-danger';
+      tdRend.className = `td-rendimento ${rendimento >= 0 ? 'text-success' : 'text-danger'}`;
       tdRend.textContent = `${rendimento >= 0 ? '+' : ''} ${formatBRL(rendimento)}`;
 
       // 7. Data Aporte
@@ -1146,6 +1245,43 @@ function renderInvestimentosTable() {
   const kpiRend = document.getElementById('kpiRendimentoTotal');
   kpiRend.textContent = `${rendimentoTotal >= 0 ? '+' : ''} ${formatBRL(rendimentoTotal)}`;
   kpiRend.className = `kpi-value ${rendimentoTotal >= 0 ? 'text-success' : 'text-danger'}`;
+}
+
+// Atualiza cálculos de rendimento da linha e KPIs sem recriar os inputs da tabela de investimentos
+function updateInvestimentoRowCalculations(tr, item) {
+  const aportado = parseFloat(item.totalAportado) || 0;
+  const atual = parseFloat(item.saldoAtual) || 0;
+  const rendimento = atual - aportado;
+
+  const tdRend = tr.querySelector('.td-rendimento');
+  if (tdRend) {
+    tdRend.textContent = `${rendimento >= 0 ? '+' : ''} ${formatBRL(rendimento)}`;
+    tdRend.className = `td-rendimento ${rendimento >= 0 ? 'text-success' : 'text-danger'}`;
+  }
+
+  updateInvestimentosSummary();
+}
+
+function updateInvestimentosSummary() {
+  let totalAportado = 0;
+  let totalAtual = 0;
+
+  (appData.investimentos || []).forEach(item => {
+    totalAportado += parseFloat(item.totalAportado) || 0;
+    totalAtual += parseFloat(item.saldoAtual) || 0;
+  });
+
+  const rendimentoTotal = totalAtual - totalAportado;
+  const kpiAp = document.getElementById('kpiAportadoTotal');
+  const kpiAt = document.getElementById('kpiAtualTotal');
+  const kpiRe = document.getElementById('kpiRendimentoTotal');
+
+  if (kpiAp) kpiAp.textContent = formatBRL(totalAportado);
+  if (kpiAt) kpiAt.textContent = formatBRL(totalAtual);
+  if (kpiRe) {
+    kpiRe.textContent = `${rendimentoTotal >= 0 ? '+' : ''} ${formatBRL(rendimentoTotal)}`;
+    kpiRe.className = `kpi-value ${rendimentoTotal >= 0 ? 'text-success' : 'text-danger'}`;
+  }
 }
 
 document.getElementById('btnAddInvestimento').addEventListener('click', () => {
@@ -1235,14 +1371,22 @@ function renderAssinaturasTable() {
       // 4. Valor
       const tdVal = document.createElement('td');
       const inVal = document.createElement('input');
-      inVal.type = 'number';
-      inVal.step = '0.01';
+      inVal.type = 'text';
+      inVal.inputMode = 'decimal';
       inVal.className = 'table-input table-input-val';
-      inVal.value = item.valor || '';
+      inVal.value = item.valor ? formatDecimalDisplay(item.valor) : '';
+      inVal.placeholder = '0,00';
       inVal.addEventListener('input', (e) => {
-        item.valor = parseFloat(e.target.value) || 0;
+        item.valor = parseCurrencyInput(e.target.value);
         saveData();
-        renderAssinaturasTable();
+        updateAssinaturasSummary();
+      });
+      inVal.addEventListener('blur', (e) => {
+        if (item.valor) {
+          e.target.value = formatDecimalDisplay(item.valor);
+        } else if (e.target.value.trim() === '') {
+          e.target.value = '';
+        }
       });
       tdVal.appendChild(inVal);
 
@@ -1336,6 +1480,23 @@ function renderAssinaturasTable() {
 
   document.getElementById('kpiAssinaturasMensal').textContent = formatBRL(totalMensal);
   document.getElementById('kpiAssinaturasAnual').textContent = formatBRL(totalMensal * 12);
+}
+
+function updateAssinaturasSummary() {
+  let totalMensal = 0;
+  (appData.assinaturas || []).forEach(item => {
+    const val = parseFloat(item.valor) || 0;
+    if (item.ciclo === 'Anual') {
+      totalMensal += val / 12;
+    } else {
+      totalMensal += val;
+    }
+  });
+
+  const kpiMen = document.getElementById('kpiAssinaturasMensal');
+  const kpiAnu = document.getElementById('kpiAssinaturasAnual');
+  if (kpiMen) kpiMen.textContent = formatBRL(totalMensal);
+  if (kpiAnu) kpiAnu.textContent = formatBRL(totalMensal * 12);
 }
 
 document.getElementById('btnAddAssinatura').addEventListener('click', () => {
