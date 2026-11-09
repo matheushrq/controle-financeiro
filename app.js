@@ -236,6 +236,26 @@ function loadData() {
   return getInitialData();
 }
 
+// Verifica se os dados atuais têm informações cadastradas pelo usuário
+function hasUserData(data) {
+  if (!data) return false;
+  const hasDividas = Array.isArray(data.dividas) && data.dividas.length > 0;
+  const hasInvest = Array.isArray(data.investimentos) && data.investimentos.length > 0;
+  const hasAssin = Array.isArray(data.assinaturas) && data.assinaturas.length > 0;
+  let hasCustomGastos = false;
+  if (data.gastos) {
+    Object.keys(data.gastos).forEach(y => {
+      Object.keys(data.gastos[y] || {}).forEach(m => {
+        const arr = data.gastos[y][m];
+        if (Array.isArray(arr) && arr.some(g => !g.id || !g.id.startsWith('demo-'))) {
+          hasCustomGastos = true;
+        }
+      });
+    });
+  }
+  return hasDividas || hasInvest || hasAssin || hasCustomGastos;
+}
+
 // Salvamento Automático com indicador visual e sincronização em Nuvem (Firebase)
 let saveTimeout = null;
 let isUpdatingFromRemote = false;
@@ -249,16 +269,16 @@ function saveData() {
     badge.querySelector('.save-text').textContent = 'Sincronizando com a nuvem...';
   }
 
+  // 1. Salva Imediatamente no LocalStorage para nunca perder dados mesmo se a página fechar
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+  } catch (e) {
+    console.error('Erro ao salvar no LocalStorage:', e);
+  }
+
+  // 2. Sincroniza no Firebase Firestore com debounce de 300ms
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(async () => {
-    // 1. Salva no LocalStorage local para acesso instantâneo offline
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-    } catch (e) {
-      console.error('Erro ao salvar no LocalStorage:', e);
-    }
-
-    // 2. Sincroniza no Firebase Firestore
     if (isFirebaseConnected && db) {
       try {
         await db.collection('financeiro').doc(FIRESTORE_DOC_ID).set({
@@ -283,14 +303,22 @@ function saveData() {
         badge.querySelector('.save-text').textContent = 'Salvo localmente';
       }
     }
-  }, 400);
+  }, 300);
 }
 
 // Configura Sincronização em Tempo Real (Escuta alterações vindas de outros dispositivos)
 function setupCloudSync() {
-  if (!isFirebaseConnected || !db) return;
-
   const badge = document.getElementById('saveIndicator');
+
+  if (!isFirebaseConnected || !db) {
+    if (badge) {
+      badge.classList.remove('saving');
+      badge.querySelector('.save-text').textContent = 'Salvo localmente';
+    }
+    return;
+  }
+
+  let isFirstLoad = true;
 
   db.collection('financeiro').doc(FIRESTORE_DOC_ID)
     .onSnapshot((doc) => {
@@ -300,6 +328,20 @@ function setupCloudSync() {
       if (doc.exists) {
         const cloudData = doc.data()?.data;
         if (cloudData) {
+          // Se for o primeiro carregamento e a nuvem estiver vazia mas o LocalStorage tiver dados do usuário,
+          // prioriza salvar os dados do LocalStorage na nuvem em vez de sobrescrever com vazio
+          if (isFirstLoad) {
+            isFirstLoad = false;
+            const cloudHasUser = hasUserData(cloudData);
+            const localHasUser = hasUserData(appData);
+
+            if (!cloudHasUser && localHasUser) {
+              console.log('Nuvem inicial sem dados; enviando dados locais para a nuvem...');
+              saveData();
+              return;
+            }
+          }
+
           isUpdatingFromRemote = true;
           appData = cloudData;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
@@ -319,11 +361,16 @@ function setupCloudSync() {
           isUpdatingFromRemote = false;
         }
       } else {
-        // Se ainda não existe documento no banco, cria o primeiro com os dados atuais
+        isFirstLoad = false;
+        // Se ainda não existe documento no banco, cria com os dados atuais
         saveData();
       }
     }, (error) => {
-      console.error('Erro ao escutar dados em tempo real:', error);
+      console.error('Erro ao escutar dados em tempo real no Firebase:', error);
+      if (badge) {
+        badge.classList.remove('saving');
+        badge.querySelector('.save-text').textContent = 'Salvo localmente (offline)';
+      }
     });
 }
 
@@ -356,6 +403,46 @@ function formatDecimalDisplay(value) {
   const num = parseFloat(value);
   if (isNaN(num)) return '';
   return num.toFixed(2).replace('.', ',');
+}
+
+// Calcula a data de encerramento da dívida (Mês/Ano ou DD/MM/AAAA)
+// Baseia-se no Dia da Compra (se informado) ou na data atual, adicionando as parcelas restantes ou totais
+function computeEncerramentoDivida(item) {
+  const parcTotais = parseInt(item.parcelasTotais, 10);
+  if (!parcTotais || isNaN(parcTotais) || parcTotais <= 0) return '—';
+
+  const parcPagas = parseInt(item.parcelasPagas, 10) || 0;
+  const parcRestantes = Math.max(0, parcTotais - parcPagas);
+
+  if (parcRestantes === 0) {
+    return 'Quitada ✓';
+  }
+
+  // Data de referência inicial: se tiver data da compra válida, usa ela; senão usa hoje
+  let baseDate;
+  if (item.dataCompra && /^\d{4}-\d{2}-\d{2}$/.test(item.dataCompra)) {
+    const [ano, mes, dia] = item.dataCompra.split('-').map(Number);
+    // Parcelas restantes a partir de (dataCompra + parcelas pagas)
+    baseDate = new Date(ano, mes - 1 + parcPagas, dia);
+  } else {
+    // Se não tem data de compra, projeta a partir do mês atual + parcelas restantes
+    const diaVenc = parseInt(item.diaVencimento, 10) || 10;
+    const now = new Date();
+    baseDate = new Date(now.getFullYear(), now.getMonth(), diaVenc);
+  }
+
+  // Adiciona as parcelas restantes (cada parcela = 1 mês)
+  const diaVenc = parseInt(item.diaVencimento, 10) || baseDate.getDate() || 10;
+  // A data final será no mês projetado no dia de vencimento
+  const finalDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + parcRestantes, 1);
+  const finalYear = finalDate.getFullYear();
+  const finalMonth = finalDate.getMonth() + 1; // 1 a 12
+
+  const monthObj = MONTHS.find(m => m.id === finalMonth);
+  const monthName = monthObj ? monthObj.short : String(finalMonth).padStart(2, '0');
+
+  // Retorna no formato ex: "10/Nov/2027" ou "Nov/2027"
+  return `${String(diaVenc).padStart(2, '0')}/${monthName}/${finalYear}`;
 }
 
 // ================= INITIALIZAÇÃO =================
@@ -776,12 +863,12 @@ function renderDividasTable() {
   if (list.length === 0) {
     const tr = document.createElement('tr');
     tr.className = 'empty-state-row';
-    tr.innerHTML = `<td colspan="10">Nenhuma dívida cadastrada. Clique em <strong>"Nova Dívida"</strong> para monitorar financiamentos ou empréstimos.</td>`;
+    tr.innerHTML = `<td colspan="13">Nenhuma dívida cadastrada. Clique em <strong>"Nova Dívida"</strong> para monitorar financiamentos ou empréstimos.</td>`;
     tbody.appendChild(tr);
   } else {
     list.forEach((item, index) => {
       const valorTotal = parseFloat(item.valorTotal) || 0;
-      const parcelasTotais = parseInt(item.parcelasTotais, 10) || 1;
+      const parcelasTotais = parseInt(item.parcelasTotais, 10) || 0;
       const parcelasPagas = parseInt(item.parcelasPagas, 10) || 0;
       const valorParcela = parseFloat(item.valorParcela) || 0;
 
@@ -838,7 +925,20 @@ function renderDividasTable() {
       });
       tdCartao.appendChild(selCartao);
 
-      // 3. Valor Total
+      // 3. Data da Compra
+      const tdDataCompra = document.createElement('td');
+      const inDataCompra = document.createElement('input');
+      inDataCompra.type = 'date';
+      inDataCompra.className = 'table-input';
+      inDataCompra.value = item.dataCompra || '';
+      inDataCompra.addEventListener('change', (e) => {
+        item.dataCompra = e.target.value;
+        saveData();
+        updateDividaRowCalculations(tr, item);
+      });
+      tdDataCompra.appendChild(inDataCompra);
+
+      // 4. Valor Total
       const tdTotal = document.createElement('td');
       const inTotal = document.createElement('input');
       inTotal.type = 'text';
@@ -860,35 +960,37 @@ function renderDividasTable() {
       });
       tdTotal.appendChild(inTotal);
 
-      // 4. Parcelas Totais
+      // 5. Parcelas Totais
       const tdParcTot = document.createElement('td');
       const inParcTot = document.createElement('input');
       inParcTot.type = 'number';
       inParcTot.className = 'table-input';
       inParcTot.style.textAlign = 'center';
-      inParcTot.value = item.parcelasTotais || 1;
+      inParcTot.placeholder = '12';
+      inParcTot.value = item.parcelasTotais !== undefined && item.parcelasTotais !== null && item.parcelasTotais !== '' ? item.parcelasTotais : '';
       inParcTot.addEventListener('input', (e) => {
-        item.parcelasTotais = parseInt(e.target.value, 10) || 1;
+        item.parcelasTotais = e.target.value === '' ? '' : (parseInt(e.target.value, 10) || 0);
         saveData();
         updateDividaRowCalculations(tr, item);
       });
       tdParcTot.appendChild(inParcTot);
 
-      // 5. Parcelas Pagas
+      // 6. Parcelas Pagas
       const tdParcPag = document.createElement('td');
       const inParcPag = document.createElement('input');
       inParcPag.type = 'number';
       inParcPag.className = 'table-input';
       inParcPag.style.textAlign = 'center';
-      inParcPag.value = item.parcelasPagas || 0;
+      inParcPag.placeholder = '0';
+      inParcPag.value = item.parcelasPagas !== undefined && item.parcelasPagas !== null && item.parcelasPagas !== '' ? item.parcelasPagas : '';
       inParcPag.addEventListener('input', (e) => {
-        item.parcelasPagas = parseInt(e.target.value, 10) || 0;
+        item.parcelasPagas = e.target.value === '' ? '' : (parseInt(e.target.value, 10) || 0);
         saveData();
         updateDividaRowCalculations(tr, item);
       });
       tdParcPag.appendChild(inParcPag);
 
-      // 6. Valor Parcela com sincronização automática para Gastos Mensais
+      // 7. Valor Parcela com sincronização automática para Gastos Mensais
       const tdValParc = document.createElement('td');
       const inValParc = document.createElement('input');
       inValParc.type = 'text';
@@ -918,14 +1020,14 @@ function renderDividasTable() {
       });
       tdValParc.appendChild(inValParc);
 
-      // 7. Saldo Devedor Calculado
+      // 8. Saldo Devedor Calculado
       const tdSaldo = document.createElement('td');
       tdSaldo.style.textAlign = 'right';
       tdSaldo.style.fontWeight = '700';
       tdSaldo.className = 'text-danger td-saldo-devedor';
       tdSaldo.textContent = formatBRL(saldoDevedor);
 
-      // 8. Vencimento Dia
+      // 9. Vencimento Todo Dia
       const tdDia = document.createElement('td');
       const inDia = document.createElement('input');
       inDia.type = 'number';
@@ -933,14 +1035,24 @@ function renderDividasTable() {
       inDia.max = '31';
       inDia.className = 'table-input';
       inDia.style.textAlign = 'center';
-      inDia.value = item.diaVencimento || 10;
+      inDia.placeholder = '10';
+      inDia.value = item.diaVencimento !== undefined && item.diaVencimento !== null && item.diaVencimento !== '' ? item.diaVencimento : '';
       inDia.addEventListener('input', (e) => {
-        item.diaVencimento = parseInt(e.target.value, 10) || 1;
+        item.diaVencimento = e.target.value === '' ? '' : (parseInt(e.target.value, 10) || 1);
         saveData();
+        updateDividaRowCalculations(tr, item);
       });
       tdDia.appendChild(inDia);
 
-      // 9. Situação
+      // 10. Encerramento da Dívida (calculado e sincronizado)
+      const tdEncerramento = document.createElement('td');
+      tdEncerramento.className = 'td-encerramento-divida';
+      tdEncerramento.style.textAlign = 'center';
+      tdEncerramento.style.fontWeight = '600';
+      tdEncerramento.style.color = '#38bdf8';
+      tdEncerramento.textContent = computeEncerramentoDivida(item);
+
+      // 11. Situação
       const tdSit = document.createElement('td');
       const selSit = document.createElement('select');
       selSit.className = 'table-select';
@@ -957,10 +1069,11 @@ function renderDividasTable() {
       });
       tdSit.appendChild(selSit);
 
-      // 10. Obs
+      // 12. Obs
       const tdObs = document.createElement('td');
       const inObs = document.createElement('input');
       inObs.className = 'table-input';
+      inObs.placeholder = 'Detalhes adicionais';
       inObs.value = item.observacoes || '';
       inObs.addEventListener('input', (e) => {
         item.observacoes = e.target.value;
@@ -968,7 +1081,7 @@ function renderDividasTable() {
       });
       tdObs.appendChild(inObs);
 
-      // 11. Ações
+      // 13. Ações
       const tdAcao = document.createElement('td');
       tdAcao.style.textAlign = 'center';
       const btnDel = document.createElement('button');
@@ -993,12 +1106,14 @@ function renderDividasTable() {
 
       tr.appendChild(tdCredor);
       tr.appendChild(tdCartao);
+      tr.appendChild(tdDataCompra);
       tr.appendChild(tdTotal);
       tr.appendChild(tdParcTot);
       tr.appendChild(tdParcPag);
       tr.appendChild(tdValParc);
       tr.appendChild(tdSaldo);
       tr.appendChild(tdDia);
+      tr.appendChild(tdEncerramento);
       tr.appendChild(tdSit);
       tr.appendChild(tdObs);
       tr.appendChild(tdAcao);
@@ -1011,9 +1126,9 @@ function renderDividasTable() {
   document.getElementById('kpiMensalDividas').textContent = formatBRL(compromissoMensal);
 }
 
-// Atualiza cálculos de saldo devedor da linha e KPIs sem recriar os inputs da tabela de dívidas
+// Atualiza cálculos de saldo devedor da linha, data de encerramento e KPIs sem recriar os inputs da tabela de dívidas
 function updateDividaRowCalculations(tr, item) {
-  const parcelasTotais = parseInt(item.parcelasTotais, 10) || 1;
+  const parcelasTotais = parseInt(item.parcelasTotais, 10) || 0;
   const parcelasPagas = parseInt(item.parcelasPagas, 10) || 0;
   const valorParcela = parseFloat(item.valorParcela) || 0;
   const parcelasRestantes = Math.max(0, parcelasTotais - parcelasPagas);
@@ -1023,6 +1138,12 @@ function updateDividaRowCalculations(tr, item) {
   const tdSaldo = tr.querySelector('.td-saldo-devedor');
   if (tdSaldo) {
     tdSaldo.textContent = formatBRL(saldoDevedor);
+  }
+
+  // Atualiza a coluna de Encerramento da Dívida
+  const tdEncerramento = tr.querySelector('.td-encerramento-divida');
+  if (tdEncerramento) {
+    tdEncerramento.textContent = computeEncerramentoDivida(item);
   }
 
   updateDividasSummary();
@@ -1051,12 +1172,13 @@ document.getElementById('btnAddDivida').addEventListener('click', () => {
   appData.dividas.push({
     id: 'div-' + Date.now(),
     credor: '',
-    cartao: 'Santander',
-    valorTotal: 0,
-    parcelasTotais: 12,
-    parcelasPagas: 0,
-    valorParcela: 0,
-    diaVencimento: 10,
+    cartao: 'Nenhum',
+    dataCompra: '',
+    valorTotal: '',
+    parcelasTotais: '',
+    parcelasPagas: '',
+    valorParcela: '',
+    diaVencimento: '',
     situacao: 'pendente',
     observacoes: ''
   });
