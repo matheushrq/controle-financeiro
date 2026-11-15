@@ -151,6 +151,12 @@ body {
   color: var(--warning);
 }
 
+.save-badge.error {
+  background-color: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--danger);
+}
+
 .status-dot {
   width: 8px;
   height: 8px;

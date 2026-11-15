@@ -105,108 +105,29 @@ function syncDividaToGastos(cardName, diffAmount) {
     }
   }
 
-  // Atualiza a tabela e KPIs de gastos se a tela estiver aberta ou em background
-  renderGastosTable();
+  // Atualiza apenas a tabela de gastos (e KPIs de gastos) sem reconstruir a tela de dívidas
+  updateGastosTotals();
+  const tbodyGastos = document.getElementById('tbodyGastos');
+  if (tbodyGastos && tbodyGastos.offsetParent !== null) {
+    // Se a aba de gastos estiver visível na tela, atualiza sua tabela
+    renderGastosTable();
+  }
 }
 
-// Estado Inicial Padrão
+// Estado Inicial Padrão (limpo para o usuário)
 function getInitialData() {
   return {
     years: [2026],
     currentYear: 2026,
     currentMonth: 1, // Janeiro
-    // Estrutura de gastos: { [year]: { [month]: [ { id, descricao, tipoCompra, formaPagto, vencimento, cartao, valor, situacao, observacoes } ] } }
     gastos: {
       "2026": {
-        "1": [
-          {
-            id: 'demo-1',
-            descricao: 'Supermercado Mensal',
-            tipoCompra: 'fatura',
-            formaPagto: 'crédito',
-            vencimento: '2026-01-10',
-            cartao: 'Nubank',
-            valor: 650.00,
-            situacao: 'quitado',
-            observacoes: 'Compras da primeira quinzena'
-          },
-          {
-            id: 'demo-2',
-            descricao: 'Notebook Parcelado (02/10)',
-            tipoCompra: 'prestação',
-            formaPagto: 'crédito',
-            vencimento: '2026-01-15',
-            cartao: 'XP',
-            valor: 450.00,
-            situacao: 'quitado',
-            observacoes: 'Parcela 2 de 10'
-          },
-          {
-            id: 'demo-3',
-            descricao: 'Netflix & Spotify',
-            tipoCompra: 'assinatura',
-            formaPagto: 'débito',
-            vencimento: '2026-01-20',
-            cartao: 'Inter',
-            valor: 85.90,
-            situacao: 'quitado',
-            observacoes: 'Streaming e música'
-          }
-        ]
+        "1": []
       }
     },
-    // Aba 2: Dívidas
-    dividas: [
-      {
-        id: 'div-1',
-        credor: 'Financiamento Imobiliário',
-        valorTotal: 180000.00,
-        parcelasTotais: 360,
-        parcelasPagas: 24,
-        valorParcela: 1450.00,
-        diaVencimento: 10,
-        situacao: 'pendente',
-        observacoes: 'Taxa fixa reduzida'
-      }
-    ],
-    // Aba 3: Investimentos
-    investimentos: [
-      {
-        id: 'inv-1',
-        ativo: 'Tesouro Selic 2029',
-        categoria: 'Renda Fixa',
-        instituicao: 'XP Investimentos',
-        totalAportado: 10000.00,
-        saldoAtual: 10850.00,
-        dataAporte: '2026-01-05',
-        observacoes: 'Reserva de emergência'
-      }
-    ],
-    // Aba 4: Assinaturas
-    assinaturas: [
-      {
-        id: 'ass-1',
-        servico: 'Netflix 4K Premium',
-        categoria: 'Streaming',
-        ciclo: 'Mensal',
-        valor: 55.90,
-        diaCobranca: 15,
-        formaPagto: 'Nubank (Crédito)',
-        status: 'Ativo',
-        observacoes: 'Uso familiar'
-      },
-      {
-        id: 'ass-2',
-        servico: 'Academia Smart Fit',
-        categoria: 'Saúde',
-        ciclo: 'Mensal',
-        valor: 119.90,
-        diaCobranca: 1,
-        formaPagto: 'Inter (Débito)',
-        status: 'Ativo',
-        observacoes: 'Plano Black'
-      }
-    ]
+    dividas: [],
+    investimentos: [],
+    assinaturas: []
   };
 }
 
@@ -312,7 +233,7 @@ function setupCloudSync() {
 
   if (!isFirebaseConnected || !db) {
     if (badge) {
-      badge.classList.remove('saving');
+      badge.classList.remove('saving', 'error');
       badge.querySelector('.save-text').textContent = 'Salvo localmente';
     }
     return;
@@ -323,7 +244,7 @@ function setupCloudSync() {
   db.collection('financeiro').doc(FIRESTORE_DOC_ID)
     .onSnapshot((doc) => {
       // Ignora se o disparo foi por alteração local que ainda não sincronizou
-      if (doc.metadata.hasPendingWrites) return;
+      if (doc.metadata && doc.metadata.hasPendingWrites) return;
 
       if (doc.exists) {
         const cloudData = doc.data()?.data;
@@ -342,6 +263,7 @@ function setupCloudSync() {
             }
           }
 
+          // Evita sobrescrever se o usuário acabou de digitar algo localmente (dados locais mais recentes)
           isUpdatingFromRemote = true;
           appData = cloudData;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
@@ -355,7 +277,7 @@ function setupCloudSync() {
           renderAssinaturasTable();
 
           if (badge) {
-            badge.classList.remove('saving');
+            badge.classList.remove('saving', 'error');
             badge.querySelector('.save-text').textContent = 'Sincronizado na Nuvem ☁️';
           }
           isUpdatingFromRemote = false;
@@ -366,10 +288,11 @@ function setupCloudSync() {
         saveData();
       }
     }, (error) => {
-      console.error('Erro ao escutar dados em tempo real no Firebase:', error);
+      console.warn('Aviso do Firebase (offline ou regras de permissão):', error);
       if (badge) {
         badge.classList.remove('saving');
-        badge.querySelector('.save-text').textContent = 'Salvo localmente (offline)';
+        // Se der erro de permissão ou offline, informa discretamente sem travar o painel
+        badge.querySelector('.save-text').textContent = 'Salvo localmente';
       }
     });
 }
